@@ -32,6 +32,10 @@ from losses import (
 )
 from mel_processing import mel_spectrogram_torch, spec_to_mel_torch
 from text.symbols import symbols
+import logging
+
+numba_logger = logging.getLogger('numba')
+numba_logger.setLevel(logging.WARNING)
 
 
 torch.backends.cudnn.benchmark = True

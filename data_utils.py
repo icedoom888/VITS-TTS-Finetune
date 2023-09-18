@@ -9,7 +9,69 @@ import commons
 from mel_processing import spectrogram_torch
 from utils import load_wav_to_torch, load_filepaths_and_text
 from text import text_to_sequence, cleaned_text_to_sequence
+import tempfile
 
+class TextMapper(object):
+    def __init__(self, vocab_file, lang):
+        self.lang = lang
+        self.symbols = [x.replace("\n", "") for x in open(vocab_file, encoding="utf-8").readlines()]
+        self.SPACE_ID = self.symbols.index(" ")
+        self._symbol_to_id = {s: i for i, s in enumerate(self.symbols)}
+        self._id_to_symbol = {i: s for i, s in enumerate(self.symbols)}
+
+    def text_to_sequence(self, text):
+        '''Converts a string of text to a sequence of IDs corresponding to the symbols in the text.
+        Args:
+        text: string to convert to a sequence
+        cleaner_names: names of the cleaner functions to run the text through
+        Returns:
+        List of integers corresponding to the symbols in the text
+        '''
+        sequence = []
+        clean_text = text.strip()
+        for symbol in clean_text:
+            symbol_id = self._symbol_to_id[symbol]
+            sequence += [symbol_id]
+        return sequence
+
+    def uromanize(self, text, uroman_pl):
+        iso = "xxx"
+        with tempfile.NamedTemporaryFile() as tf, \
+             tempfile.NamedTemporaryFile() as tf2:
+            with open(tf.name, "w") as f:
+                f.write("\n".join([text]))
+            cmd = f"perl " + uroman_pl
+            cmd += f" -l {iso} "
+            cmd +=  f" < {tf.name} > {tf2.name}"
+            os.system(cmd)
+            outtexts = []
+            with open(tf2.name) as f:
+                for line in f:
+                    line =  re.sub(r"\s+", " ", line).strip()
+                    outtexts.append(line)
+            outtext = outtexts[0]
+        return outtext
+
+    def get_text(self, text):
+        text_norm = self.text_to_sequence(text)
+        text_norm = torch.LongTensor(text_norm)
+        return text_norm
+
+    def filter_oov(self, text):
+        text = self.preprocess_char(text)
+        val_chars = self._symbol_to_id
+        txt_filt = "".join(list(filter(lambda x: x in val_chars, text)))
+        # print(f"text after filtering OOV: {txt_filt}")
+        return txt_filt
+
+    def preprocess_char(self, text):
+        """
+        Special treatement of characters in certain languages
+        """
+        if self.lang == "ron":
+            text = text.replace("ț", "ţ")
+            print(f"{self.lang} (ț -> ţ): {text}")
+        return text
 
 class TextAudioLoader(torch.utils.data.Dataset):
     """
@@ -28,6 +90,9 @@ class TextAudioLoader(torch.utils.data.Dataset):
         self.sampling_rate  = hparams.sampling_rate 
 
         self.cleaned_text = getattr(hparams, "cleaned_text", False)
+        vocab_file = f"{hparams.ckpt_dir}/vocab.txt"
+        lang = hparams.lang
+        self.text_mapper = TextMapper(vocab_file, lang)
 
         self.add_blank = hparams.add_blank
         self.min_text_len = getattr(hparams, "min_text_len", 1)
@@ -80,10 +145,8 @@ class TextAudioLoader(torch.utils.data.Dataset):
         return spec, audio_norm
 
     def get_text(self, text):
-        if self.cleaned_text:
-            text_norm = cleaned_text_to_sequence(text)
-        else:
-            text_norm = text_to_sequence(text, self.text_cleaners)
+        text = self.text_mapper.filter_oov(text)
+        text_norm = self.text_mapper.get_text(text)
         if self.add_blank:
             text_norm = commons.intersperse(text_norm, 0)
         text_norm = torch.LongTensor(text_norm)
@@ -292,7 +355,7 @@ class TextAudioSpeakerCollate():
         return text_padded, text_lengths, spec_padded, spec_lengths, wav_padded, wav_lengths, sid
 
 
-class DistributedBucketSampler():
+class DistributedBucketSampler(torch.utils.data.distributed.DistributedSampler):
     """
     Maintain similar input lengths in a batch.
     Length groups are specified by boundaries.
@@ -318,8 +381,8 @@ class DistributedBucketSampler():
             idx_bucket = self._bisect(length)
             if idx_bucket != -1:
                 buckets[idx_bucket].append(i)
-  
-        for i in range(len(buckets) - 1, 0, -1):
+          
+        for i in range(len(buckets) - 1, -1, -1):
             if len(buckets[i]) == 0:
                 buckets.pop(i)
                 self.boundaries.pop(i+1)
