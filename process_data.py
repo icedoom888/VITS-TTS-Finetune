@@ -4,12 +4,26 @@ from math import floor
 from tqdm import tqdm
 import text
 import json
+import librosa
+import numpy as np
+import torch
+import torchaudio.functional as F
+from torchaudio import save as save_audio
+
+def load_wav_to_torch(full_path):
+  data, sampling_rate = librosa.load(full_path)
+  data = librosa.to_mono(data)
+  # sampling_rate, data = read(full_path)
+  return torch.FloatTensor(data.astype(np.float32)), sampling_rate
 
 def process_filelist(args, wav_filelist, json_filelist, split):
 
     filepaths_and_text = []
 
     for wav_path, json_path in tqdm(zip(wav_filelist, json_filelist), total=len(wav_list)):
+        audio, sr = load_wav_to_torch(wav_path)
+        new_audio = F.resample(audio, sr, 16000).unsqueeze(0)
+        save_audio(wav_path, new_audio.cpu(), 16000)
 
         # Check language
         with open(json_path, "r") as json_file:

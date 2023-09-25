@@ -31,7 +31,7 @@ from losses import (
   kl_loss
 )
 from mel_processing import mel_spectrogram_torch, spec_to_mel_torch
-from text.symbols import symbols
+# from text.symbols import symbols
 import logging
 
 numba_logger = logging.getLogger('numba')
@@ -67,6 +67,7 @@ def run(rank, n_gpus, hps):
   torch.manual_seed(hps.train.seed)
   torch.cuda.set_device(rank)
 
+  # Train set
   train_dataset = TextAudioLoader(hps.data.training_files, hps.data)
   train_sampler = DistributedBucketSampler(
       train_dataset,
@@ -78,14 +79,16 @@ def run(rank, n_gpus, hps):
   collate_fn = TextAudioCollate()
   train_loader = DataLoader(train_dataset, num_workers=8, shuffle=False, pin_memory=True,
       collate_fn=collate_fn, batch_sampler=train_sampler)
+  
+  # Eval set
   if rank == 0:
     eval_dataset = TextAudioLoader(hps.data.validation_files, hps.data)
     eval_loader = DataLoader(eval_dataset, num_workers=8, shuffle=False,
         batch_size=hps.train.batch_size, pin_memory=True,
         drop_last=False, collate_fn=collate_fn)
-
+  
   net_g = SynthesizerTrn(
-      len(symbols),
+      len(train_dataset.text_mapper.symbols),
       hps.data.filter_length // 2 + 1,
       hps.train.segment_size // hps.data.hop_length,
       **hps.model).cuda(rank)
@@ -117,12 +120,14 @@ def run(rank, n_gpus, hps):
   scaler = GradScaler(enabled=hps.train.fp16_run)
 
   for epoch in range(epoch_str, hps.train.epochs + 1):
+    scheduler_g.step()
+    scheduler_d.step()
+
     if rank==0:
       train_and_evaluate(rank, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler, [train_loader, eval_loader], logger, [writer, writer_eval])
     else:
       train_and_evaluate(rank, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler, [train_loader, None], None, None)
-    scheduler_g.step()
-    scheduler_d.step()
+
 
 
 def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loaders, logger, writers):
@@ -139,6 +144,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
   net_g.train()
   net_d.train()
   for batch_idx, (x, x_lengths, spec, spec_lengths, y, y_lengths) in enumerate(train_loader):
+    
     x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
     spec, spec_lengths = spec.cuda(rank, non_blocking=True), spec_lengths.cuda(rank, non_blocking=True)
     y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
@@ -228,8 +234,9 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
         evaluate(hps, net_g, eval_loader, writer_eval)
         utils.save_checkpoint(net_g, optim_g, hps.train.learning_rate, epoch, os.path.join(hps.model_dir, "G_{}.pth".format(global_step)))
         utils.save_checkpoint(net_d, optim_d, hps.train.learning_rate, epoch, os.path.join(hps.model_dir, "D_{}.pth".format(global_step)))
+        
     global_step += 1
-  
+      
   if rank == 0:
     logger.info('====> Epoch: {}'.format(epoch))
 
@@ -250,6 +257,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
         y = y[:1]
         y_lengths = y_lengths[:1]
         break
+
       y_hat, attn, mask, *_ = generator.module.infer(x, x_lengths, max_len=1000)
       y_hat_lengths = mask.sum([1,2]).long() * hps.data.hop_length
 
@@ -274,11 +282,12 @@ def evaluate(hps, generator, eval_loader, writer_eval):
       "gen/mel": utils.plot_spectrogram_to_numpy(y_hat_mel[0].cpu().numpy())
     }
     audio_dict = {
-      "gen/audio": y_hat[0,:,:y_hat_lengths[0]]
+      "gen/audio": y_hat[0,:,:y_hat_lengths[0]] * hps.data.max_wav_value
     }
+
     if global_step == 0:
       image_dict.update({"gt/mel": utils.plot_spectrogram_to_numpy(mel[0].cpu().numpy())})
-      audio_dict.update({"gt/audio": y[0,:,:y_lengths[0]]})
+      audio_dict.update({"gt/audio": y[0,:,:y_lengths[0]] * hps.data.max_wav_value})
 
     utils.summarize(
       writer=writer_eval,
@@ -287,6 +296,9 @@ def evaluate(hps, generator, eval_loader, writer_eval):
       audios=audio_dict,
       audio_sampling_rate=hps.data.sampling_rate
     )
+    
+    # utils.save_wavs(writer_eval.log_dir, hps.data.max_wav_value, global_step, audios=audio_dict, audio_sampling_rate=hps.data.sampling_rate)
+
     generator.train()
 
                            

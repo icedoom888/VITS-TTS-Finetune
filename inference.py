@@ -10,115 +10,34 @@ from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 import numpy as np
+from text.symbols import symbols
 import commons
 import utils
 import argparse
 import subprocess
-from data_utils import TextAudioLoader, TextAudioCollate, TextAudioSpeakerLoader, TextAudioSpeakerCollate
+from data_utils import TextAudioLoader, TextAudioCollate, TextAudioSpeakerLoader, TextAudioSpeakerCollate, TextMapper
 from models import SynthesizerTrn
 from scipy.io.wavfile import write
-
-def preprocess_char(text, lang=None):
-    """
-    Special treatement of characters in certain languages
-    """
-    print(lang)
-    if lang == 'ron':
-        text = text.replace("ț", "ţ")
-    return text
-
-class TextMapper(object):
-    def __init__(self, vocab_file):
-        self.symbols = [x.replace("\n", "") for x in open(vocab_file, encoding="utf-8").readlines()]
-        self.SPACE_ID = self.symbols.index(" ")
-        self._symbol_to_id = {s: i for i, s in enumerate(self.symbols)}
-        self._id_to_symbol = {i: s for i, s in enumerate(self.symbols)}
-
-    def text_to_sequence(self, text, cleaner_names):
-        '''Converts a string of text to a sequence of IDs corresponding to the symbols in the text.
-        Args:
-        text: string to convert to a sequence
-        cleaner_names: names of the cleaner functions to run the text through
-        Returns:
-        List of integers corresponding to the symbols in the text
-        '''
-        sequence = []
-        clean_text = text.strip()
-        for symbol in clean_text:
-            symbol_id = self._symbol_to_id[symbol]
-            sequence += [symbol_id]
-        return sequence
-
-    def uromanize(self, text, uroman_pl):
-        iso = "xxx"
-        with tempfile.NamedTemporaryFile() as tf, \
-             tempfile.NamedTemporaryFile() as tf2:
-            with open(tf.name, "w") as f:
-                f.write("\n".join([text]))
-            cmd = f"perl " + uroman_pl
-            cmd += f" -l {iso} "
-            cmd +=  f" < {tf.name} > {tf2.name}"
-            os.system(cmd)
-            outtexts = []
-            with open(tf2.name) as f:
-                for line in f:
-                    line =  re.sub(r"\s+", " ", line).strip()
-                    outtexts.append(line)
-            outtext = outtexts[0]
-        return outtext
-
-    def get_text(self, text, hps):
-        text_norm = self.text_to_sequence(text, hps.data.text_cleaners)
-        if hps.data.add_blank:
-            text_norm = commons.intersperse(text_norm, 0)
-        text_norm = torch.LongTensor(text_norm)
-        return text_norm
-
-    def filter_oov(self, text):
-        val_chars = self._symbol_to_id
-        txt_filt = "".join(list(filter(lambda x: x in val_chars, text)))
-        print(f"text after filtering OOV: {txt_filt}")
-        return txt_filt
-
-def preprocess_text(txt, text_mapper, hps, uroman_dir=None, lang=None):
-    txt = preprocess_char(txt, lang=lang)
-    is_uroman = hps.data.training_files.split('.')[-1] == 'uroman'
-    if is_uroman:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            if uroman_dir is None:
-                cmd = f"git clone git@github.com:isi-nlp/uroman.git {tmp_dir}"
-                print(cmd)
-                subprocess.check_output(cmd, shell=True)
-                uroman_dir = tmp_dir
-            uroman_pl = os.path.join(uroman_dir, "bin", "uroman.pl")
-            print(f"uromanize")
-            txt = text_mapper.uromanize(txt, uroman_pl)
-            print(f"uroman text: {txt}")
-    txt = txt.lower()
-    txt = text_mapper.filter_oov(txt)
-    return txt
 
 class VITS():
     def __init__(self, args, device) -> None:
 
-        self.LANG = args.lang
         self.device = device
+        self.model_path = args.model_path
+        self.config_path = os.path.join(self.model_path, 'config.json')
 
-        # Get checkpoint
-        ckpt_dir = os.path.join("mms_ckpt", self.LANG)
-        
-        if not os.path.isdir(ckpt_dir): # If it doesn't exist download it
-            from download_MMS_ckpt import download
-            download(self.LANG, 'mms_ckpt/')
+        # Load config
+        assert os.path.isfile(self.config_path), f"{self.config_path} doesn't exist"
+        self.hps = utils.get_hparams_from_file(self.config_path)
 
-        vocab_file = f"{ckpt_dir}/vocab.txt"
-        config_file = f"{ckpt_dir}/config.json"
-        assert os.path.isfile(config_file), f"{config_file} doesn't exist"
+        self.lang = self.hps.data.lang
+        vocab_file = f"vocabs/{self.lang}.txt"
 
-        self.hps = utils.get_hparams_from_file(config_file)
-        
+        g_pth = os.path.join(self.model_path, f'G_{args.epoch}.pth')
+        assert os.path.isfile(g_pth), f"{g_pth} doesn't exist"
+
         # Make text mapper
-        self.text_mapper = TextMapper(vocab_file)
+        self.text_mapper = TextMapper(vocab_file, self.lang)
 
         # Make actual VITS model
         net_g = SynthesizerTrn(
@@ -126,21 +45,22 @@ class VITS():
             self.hps.data.filter_length // 2 + 1,
             self.hps.train.segment_size // self.hps.data.hop_length,
             **self.hps.model)
+        
         net_g.to(device)
         _ = net_g.eval()
 
         # Load checkpoint
-        g_pth = f"{ckpt_dir}/G_100000.pth"
         print(f"load {g_pth}")
         _ = utils.load_checkpoint(g_pth, net_g, None)
 
         self.model = net_g 
 
     def __call__(self, txt):
-        txt = preprocess_text(txt, self.text_mapper, self.hps, lang=self.LANG)
-        stn_tst = self.text_mapper.get_text(txt, self.hps)
+        stn_tst = self.text_mapper(txt)
+        print(stn_tst)
         with torch.no_grad():
             x_tst = stn_tst.unsqueeze(0).to(self.device)
+            
             x_tst_lengths = torch.LongTensor([stn_tst.size(0)]).to(self.device)
             hyp = self.model.infer(
                             x_tst, x_tst_lengths, noise_scale=.667,
@@ -163,18 +83,21 @@ def main(args):
     vits_model = VITS(args, device)
     
     # Get input text and generate audio
-    txt = input(f"\nWrite some text in {args.lang}: ")
+    txt = input(f"\nWrite some text in {vits_model.lang}: ")
     audio = vits_model(txt)
 
     # save
-    sample_path = os.path.join("samples", f"{txt.replace(' ', '_')}.wav")
+    os.makedirs("results", exist_ok=True)
+    sample_path = os.path.join("results", f"{txt.replace(' ', '_')}.wav")
+    print(f"File saved at {sample_path}")
     save_audio(sample_path, audio, vits_model.hps.data.sampling_rate)
 
 
 if __name__ == "__main__":
     # parse arguments for rank
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lang", type=str, default="eng")
+    parser.add_argument("--model_path", type=str, help="Path to the model folder.")
+    parser.add_argument("--epoch", type=int, default=10000)
     args = parser.parse_args()
 
     main(args)

@@ -10,6 +10,7 @@ from mel_processing import spectrogram_torch
 from utils import load_wav_to_torch, load_filepaths_and_text
 from text import text_to_sequence, cleaned_text_to_sequence
 import tempfile
+import torchaudio.functional as F
 
 class TextMapper(object):
     def __init__(self, vocab_file, lang):
@@ -54,6 +55,7 @@ class TextMapper(object):
 
     def get_text(self, text):
         text_norm = self.text_to_sequence(text)
+        text_norm = commons.intersperse(text_norm, 0)
         text_norm = torch.LongTensor(text_norm)
         return text_norm
 
@@ -73,6 +75,11 @@ class TextMapper(object):
             print(f"{self.lang} (ț -> ţ): {text}")
         return text
 
+    def __call__(self, text):
+        text = self.filter_oov(text)
+        text_norm = self.get_text(text)
+        return text_norm
+
 class TextAudioLoader(torch.utils.data.Dataset):
     """
         1) loads audio, text pairs
@@ -90,7 +97,7 @@ class TextAudioLoader(torch.utils.data.Dataset):
         self.sampling_rate  = hparams.sampling_rate 
 
         self.cleaned_text = getattr(hparams, "cleaned_text", False)
-        vocab_file = f"{hparams.ckpt_dir}/vocab.txt"
+        vocab_file = f"vocabs/{hparams.lang}.txt"
         lang = hparams.lang
         self.text_mapper = TextMapper(vocab_file, lang)
 
@@ -130,7 +137,10 @@ class TextAudioLoader(torch.utils.data.Dataset):
     def get_audio(self, filename):
         audio, sampling_rate = load_wav_to_torch(filename)
         if sampling_rate != self.sampling_rate:
-            raise ValueError("{} SR doesn't match target {} SR".format(sampling_rate, self.sampling_rate))
+            audio = F.resample(audio, sampling_rate, self.sampling_rate)
+            sampling_rate = self.sampling_rate
+            # raise ValueError("{} SR doesn't match target {} SR".format(sampling_rate, self.sampling_rate))
+
         audio_norm = audio / self.max_wav_value
         audio_norm = audio_norm.unsqueeze(0)
         spec_filename = filename.replace(".wav", ".spec.pt")
@@ -145,11 +155,7 @@ class TextAudioLoader(torch.utils.data.Dataset):
         return spec, audio_norm
 
     def get_text(self, text):
-        text = self.text_mapper.filter_oov(text)
-        text_norm = self.text_mapper.get_text(text)
-        if self.add_blank:
-            text_norm = commons.intersperse(text_norm, 0)
-        text_norm = torch.LongTensor(text_norm)
+        text_norm = self.text_mapper(text)    
         return text_norm
 
     def __getitem__(self, index):

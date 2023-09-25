@@ -9,12 +9,20 @@ import numpy as np
 from scipy.io.wavfile import read
 import librosa
 import torch
+from torchaudio import save as save_audio
 
 MATPLOTLIB_FLAG = False
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging
 
+def save_wavs(log_dir, max_val, epoch, audios={}, audio_sampling_rate=22050):
+  out_path = os.path.join(log_dir, "gen_%05d.wav"%epoch)
+  save_audio(out_path, audios["gen/audio"].cpu() * max_val, audio_sampling_rate)
+
+  out_path = os.path.join(log_dir, "gt_%05d.wav"%epoch)
+  save_audio(out_path, audios["gt/audio"].cpu() * max_val, audio_sampling_rate)
+  return
 
 def load_checkpoint(checkpoint_path, model, optimizer=None):
   assert os.path.isfile(checkpoint_path)
