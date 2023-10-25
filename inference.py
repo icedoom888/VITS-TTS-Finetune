@@ -18,6 +18,7 @@ import subprocess
 from data_utils import TextAudioLoader, TextAudioCollate, TextAudioSpeakerLoader, TextAudioSpeakerCollate, TextMapper
 from models import SynthesizerTrn
 from scipy.io.wavfile import write
+import text
 
 class VITS():
     def __init__(self, args, device) -> None:
@@ -56,8 +57,9 @@ class VITS():
         self.model = net_g 
 
     def __call__(self, txt):
-        stn_tst = self.text_mapper(txt)
-        print(stn_tst)
+        cleaned_text = text._clean_text(txt, ['basic_cleaners'])
+        print('Cleaned text: ', cleaned_text)
+        stn_tst = self.text_mapper(cleaned_text)
         with torch.no_grad():
             x_tst = stn_tst.unsqueeze(0).to(self.device)
             
@@ -83,14 +85,16 @@ def main(args):
     vits_model = VITS(args, device)
     
     # Get input text and generate audio
-    txt = input(f"\nWrite some text in {vits_model.lang}: ")
-    audio = vits_model(txt)
+    # txt = input(f"\nWrite some text in {vits_model.lang}: ")
+    txt = "Die Schweizer Medien arbeiten zusammen mit der Eidgenössischen Technischen HochschuleZürich, um eine künstlichen Intelligenz zu entwickeln, die Deutsche Sätze schweizerisch auszusprechen kann ."
+    for i in range(2):
+        audio = vits_model(txt)
 
-    # save
-    os.makedirs("results", exist_ok=True)
-    sample_path = os.path.join("results", f"{txt.replace(' ', '_')}.wav")
-    print(f"File saved at {sample_path}")
-    save_audio(sample_path, audio, vits_model.hps.data.sampling_rate)
+        # save
+        os.makedirs("results", exist_ok=True)
+        sample_path = os.path.join("results", f"{args.model_path.replace('/', '_')}_{i}.wav")
+        print(f"File saved at {sample_path}")
+        save_audio(sample_path, audio, vits_model.hps.data.sampling_rate)
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ def process_filelist(args, wav_filelist, json_filelist, split):
     return
 
 
-def split_filelist(file_list, split=(0.7, 0.1, 0.2)):
+def split_filelist(file_list, split=(0.9, 0.1, 0.0)):
     train_split, val_split, test_split = split
 
     train_split_index = floor(len(file_list) * train_split)
@@ -76,8 +76,8 @@ if __name__ == "__main__":
     json_list = [os.path.join(args.datapath, 'transcription/audio_transcriptions/', f) for f in sorted(os.listdir(os.path.join(args.datapath, 'transcription/audio_transcriptions/')))]
 
     # split into train val test
-    wav_filelists = split_filelist(wav_list, split=(0.8, 0.1, 0.1))
-    json_filelists = split_filelist(json_list, split=(0.8, 0.1, 0.1))
+    wav_filelists = split_filelist(wav_list, split=(0.9, 0.1, 0.0))
+    json_filelists = split_filelist(json_list, split=(0.9, 0.1, 0.0))
 
     for split, wav_filelist, json_filelist in zip(splits, wav_filelists, json_filelists):
         # process each split

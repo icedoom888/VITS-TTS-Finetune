@@ -20,8 +20,8 @@
       "c_kl": 1.0
     },
     "data": {
-      "training_files":"filelists/SRF_podcast_train_filelist.txt",
-      "validation_files":"filelists/SRF_podcast_val_filelist.txt",
+      "training_files":"filelists/Arthur_train_filelist.txt",
+      "validation_files":"filelists/Arthur_val_filelist.txt",
       "text_cleaners":[
           "transliteration_cleaners"
       ],
@@ -54,6 +54,11 @@
       "upsample_kernel_sizes": [16,16,4,4],
       "n_layers_q": 3,
       "use_spectral_norm": false
+    },
+    "finetune": {
+      "ckpt_path": "/home/alberto/vits-finetune/mms_ckpt/deu/",
+      "epochs": 10000,
+      "learning_rate": 2e-4
     }
   }
   
