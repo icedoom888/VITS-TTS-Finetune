@@ -16,6 +16,16 @@ def get_total_audio_length(folder_path):
     return total_length_seconds
 
 # Example usage
-folder_path = "/mnt/Urs_Gredig"
-total_length_seconds = get_total_audio_length(folder_path)
-print(f"Total audio length of {folder_path}: {int(round(total_length_seconds//60, 0))} minutes, {int(round(total_length_seconds%60, 0))} seconds")
+base = '/mnt/processed_data'
+folder_paths = ["Urs_Gredig", 
+                "Cornelia_Boesch", 
+                "Binga_Silberschmidt", 
+                "Andrea_Vetsch", 
+                "Arthur_Honegger", 
+                "Florian_Inhauser", 
+                ]
+
+for f in folder_paths:
+    folder_path = os.path.join(base, f, 'split_audio')
+    total_length_seconds = get_total_audio_length(folder_path)
+    print(f"Total audio length of {folder_path}: {int(round(total_length_seconds//60, 0))} minutes, {int(round(total_length_seconds%60, 0))} seconds")

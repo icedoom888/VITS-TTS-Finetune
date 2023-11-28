@@ -1,0 +1,12 @@
+README.md
+setup.py
+monotonic_align/__init__.py
+monotonic_align/setup.py
+natural_voices.egg-info/PKG-INFO
+natural_voices.egg-info/SOURCES.txt
+natural_voices.egg-info/dependency_links.txt
+natural_voices.egg-info/requires.txt
+natural_voices.egg-info/top_level.txt
+text/__init__.py
+text/cleaners.py
+text/symbols.py

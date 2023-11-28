@@ -1,0 +1,6 @@
+Metadata-Version: 2.1
+Name: natural-voices
+Version: 0.0.1
+Summary: A python implementation of Vits TTS model
+Author: Media Technology Center (ETH Zürich)
+Author-email: mtc@ethz.ch
