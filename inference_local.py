@@ -21,10 +21,10 @@ from scipy.io.wavfile import write
 import text
 
 class VITS():
-    def __init__(self, model_path, device) -> None:
+    def __init__(self, args, device) -> None:
 
         self.device = device
-        self.model_path = model_path
+        self.model_path = args.model_path
         self.config_path = os.path.join(self.model_path, 'config.json')
 
         # Load config
@@ -34,7 +34,7 @@ class VITS():
         self.lang = self.hps.data.lang
         vocab_file = f"vocabs/{self.lang}.txt"
 
-        g_pth = os.path.join(self.model_path, f'G.pth')
+        g_pth = os.path.join(self.model_path, f'G_{args.epoch}.pth')
         assert os.path.isfile(g_pth), f"{g_pth} doesn't exist"
 
         # Make text mapper

@@ -4,7 +4,7 @@ with open("requirements.txt", "r") as f:
     dependencies = f.read().splitlines()
 
 setup(
-    name="natural-voices",
+    name="natural_voices",
     version="0.0.1",
     author="Media Technology Center (ETH Zürich)",
     author_email="mtc@ethz.ch",
