@@ -11,4 +11,7 @@ build
 *.c
 monotonic_align/monotonic_align
 mms_ckpt
-
+filelists
+configs
+monotonic_align
+code_dump

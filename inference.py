@@ -82,17 +82,17 @@ def main(args):
     print(f"Run inference with {device}")
 
     # Make model
-    vits_model = VITS(args, device)
+    vits_model = VITS(args.model_path, device)
     
     # Get input text and generate audio
-    # txt = input(f"\nWrite some text in {vits_model.lang}: ")
-    txt = "Die Schweizer Medien arbeiten zusammen mit der Eidgenössischen Technischen HochschuleZürich, um eine künstlichen Intelligenz zu entwickeln, die Deutsche Sätze schweizerisch auszusprechen kann ."
+    txt = input(f"\nWrite some text in {vits_model.lang}: ")
+    # txt = "Die Schweizer Medien arbeiten zusammen mit der Eidgenössischen Technischen HochschuleZürich, um eine künstlichen Intelligenz zu entwickeln, die Deutsche Sätze schweizerisch auszusprechen kann ."
     for i in range(1):
         audio = vits_model(txt)
 
         # save
         os.makedirs("results", exist_ok=True)
-        sample_path = os.path.join("results", f"{args.model_path.replace('/', '_')}_{i}_{args.epoch}.wav")
+        sample_path = os.path.join("results", f"{args.model_path.split('/')[-1]}_{i}.wav")
         print(f"File saved at {sample_path}")
         save_audio(sample_path, audio, vits_model.hps.data.sampling_rate)
 
@@ -101,7 +101,6 @@ if __name__ == "__main__":
     # parse arguments for rank
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", '-m', type=str, help="Path to the model folder.")
-    parser.add_argument("--epoch", '-e', type=int, default=10000)
     args = parser.parse_args()
 
     main(args)
