@@ -2,6 +2,13 @@
 
 Finetuning of [VITS](https://arxiv.org/abs/2106.06103): Conditional Variational Autoencoder with Adversarial Learning for End-to-End Text-to-Speech.
 
+## Table of Contents
+1. [Pre-requisites](#pre-requisites)
+2. [Get Meta MMS checkpoints](#get-meta-mms-checkpoints)
+3. [Data Processing](#data-processing)
+4. [Finetuning](#finetuning)
+5. [Inference](#inference)
+
 
 ## Pre-requisites
 0. Python >= 3.6
